@@ -184,16 +184,40 @@ and the function pointer handling in general.
 
 ## Detailed design
 
-Describe the design of the solution in detail. If it involves new
-syntax in the language, show the additions and changes to the Swift
-grammar. If it's a new API, show the full API and its documentation
-comments detailing what it does. The detail in this section should be
-sufficient for someone who is *not* one of the authors to be able to
-reasonably implement the feature.
+Implementation of this feature is based on the constraint restriction
+mechanism also used for other implicit conversions such as p
+ointer/optional conversions. It introduces a new `PointerToCPointer` 
+restriction kind which is only applied in argument positions when 
+call is referencing an C/ObjC imported declaration and argument is
+either `Unsafe[Mutable]RawPointer` or `Unsafe[Mutable]Pointer<T>` and
+parameter is a pointer type or an optional (however deep) type wrapping
+a pointer.
 
-###
+To support new conversion in interaction with optional types e.g.
+`UnsafeRawPointer` -> `UnsafePointer<UInt8>?` new restriction wouldn't
+be recorded until there are other restrictions left to try 
+(e.g. value-to-optional or optional-to-optional conversions), doing so 
+makes sure that optional promotion or unwrap happens before new implicit 
+conversion is considered.
 
-Show a table with all the allowed conversions, including Optional/Mutable
+Note that only conversions between typed signed and unsigned integral pointers
+are commutative, conversions from raw pointers are more restrictive:
+
+|Argument|Parameter|Is Commutative|
+---|---|---
+|`UnsafeRawPointer`|`UnsafePointer<[U]Int8>`|No|
+|`UnsafeMutableRawPointer`|`Unsafe[Mutable]Pointer<[U]Int8>`|No|
+|`UnsafePointer<T>`|`UnsafePointer<[U]Int8>`|No|
+|`UnsafeMutablePointer<T>`|`Unsafe[Mutable]Pointer<[U]Int8>`|No|
+|`UnsafePointer<Int8>`|`UnsafePointer<UInt8>`|Yes|
+|`UnsafePointer<Int16>`|`UnsafePointer<UInt16>`|Yes|
+|`UnsafePointer<Int32>`|`UnsafePointer<UInt32>`|Yes|
+|`UnsafePointer<Int64>`|`UnsafePointer<UInt64>`|Yes|
+|`UnsafeMutablePointer<Int8>`|`Unsafe[Mutable]Pointer<UInt8>`|Yes|
+|`UnsafeMutablePointer<Int16>`|`Unsafe[Mutable]Pointer<UInt16>`|Yes|
+|`UnsafeMutablePointer<Int32>`|`Unsafe[Mutable]Pointer<UInt32>`|Yes|
+|`UnsafeMutablePointer<Int64>`|`Unsafe[Mutable]Pointer<UInt64>`|Yes|
+
 
 ## Source compatibility
 
