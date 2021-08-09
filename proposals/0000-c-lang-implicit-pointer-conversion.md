@@ -65,8 +65,7 @@ initial attempt will look like this:
     
 The compiler issues an unhelpful error:
 
-    error: cannot convert value of type 'UnsafeRawPointer'
-    to expected argument type 'UnsafePointer<UInt8>'
+    error: cannot convert value of type 'UnsafeRawPointer' to expected argument type 'UnsafePointer<UInt8>'
     
 There's no way to make the diagnostic helpful because there's no way
 to make this conversion generally safe. A determined programmer will
@@ -118,7 +117,7 @@ It should be possible to call `computeDigest` from Swift as follows:
         }
     }
 
-Without implicit conversion we end up with something like this:
+Without implicit conversion we need to write something like this instead:
 
     func makeDigest(data: Data, wrapper: inout DigestWrapper) -> Int32 {
         data.withUnsafeBytes { inBytes in
@@ -185,16 +184,16 @@ and the function pointer handling in general.
 ## Detailed design
 
 Implementation of this feature is based on the constraint restriction
-mechanism also used for other implicit conversions such as p
-ointer/optional conversions. It introduces a new `PointerToCPointer` 
-restriction kind which is only applied in argument positions when 
-call is referencing an C/ObjC imported declaration and argument is
-either `Unsafe[Mutable]RawPointer` or `Unsafe[Mutable]Pointer<T>` and
-parameter is a pointer type or an optional (however deep) type wrapping
-a pointer.
+mechanism also used for other implicit conversions such as
+pointer/optional conversions. It introduces a new `PointerToCPointer`
+restriction kind which is only applied in argument positions when call
+is referencing an C/ObjC imported declaration and argument is either
+`Unsafe[Mutable]RawPointer` or `Unsafe[Mutable]Pointer<T>` and
+parameter is a pointer type or an optional (however deep) type
+wrapping a pointer.
 
 To support new conversion in interaction with optional types e.g.
-`UnsafeRawPointer` -> `UnsafePointer<UInt8>?` new restriction wouldn't
+`UnsafeRawPointer` -> `UnsafePointer<UInt8>?` new restriction won't
 be recorded until there are other restrictions left to try 
 (e.g. value-to-optional or optional-to-optional conversions), doing so 
 makes sure that optional promotion or unwrap happens before new implicit 
@@ -263,7 +262,7 @@ for type pointer aliasing should remain simple and robust. Special
 case aliasing rules that happen to work for common cases are deeply
 misleading. They introduce complexity in the language definition,
 implementation, and tooling. These special cases are unnecessary and
-undesirable for well-designed Swift APIs. Allowing type cunning
+undesirable for well-designed Swift APIs. Implicit type punning
 introduces more opportunities for bugs. Special aliasing rules would
 also penalize performance of pure Swift code. Finally, this would not
 be a source-compatible change.
@@ -279,5 +278,6 @@ workaround alternative.
 Thank you to all the patient Swift programmers who have struggled with
 C interoperability and shared their experience with the Swift team.
 
-Thanks to @eskimo, @lukasa, @jrose, and @itaiferber for helping those
-programmers find their way with unsafe pointers.
+Thanks to @eskimo, @lukasa, @jrose, @karl, and @itaiferber for helping
+those programmers use unsafe pointers while waiting for the language
+and libraries to be improved.
