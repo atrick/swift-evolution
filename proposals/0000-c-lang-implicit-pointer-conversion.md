@@ -192,14 +192,14 @@ is referencing an C/ObjC imported declaration and argument is either
 parameter is a pointer type or an optional (however deep) type
 wrapping a pointer.
 
-To support new conversion in interaction with optional types e.g.
-`UnsafeRawPointer` -> `UnsafePointer<UInt8>?` new restriction won't
-be recorded until there are other restrictions left to try 
-(e.g. value-to-optional or optional-to-optional conversions), doing so 
-makes sure that optional promotion or unwrap happens before new implicit 
-conversion is considered.
+To support the new conversions in combination with optional types, e.g.
+`UnsafeRawPointer` -> `UnsafePointer<UInt8>?`, the new restriction won't
+be recorded as long as there are other restrictions left to try 
+(e.g. value-to-optional or optional-to-optional conversions). Doing so 
+ensures that optional promotion or unwrapping happens before the new implicit 
+conversions are considered.
 
-Note that only conversions between typed signed and unsigned integral pointers
+Note that while conversions between typed signed and unsigned integer pointers
 are commutative, conversions from raw pointers are more restrictive:
 
 |Argument|Parameter|Is Commutative|
