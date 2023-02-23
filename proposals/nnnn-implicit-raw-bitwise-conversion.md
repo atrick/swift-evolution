@@ -143,7 +143,7 @@ Implicit casts from a FixedWidthInteger will continue to be supported without a 
     readBytes(&intArray)
     writeBytes(&intArray)
 
-Implicit casts from trivial collection elements, will continue to be supported without a warning:
+Implicit casts from bitwise copyable array elements, will continue to be supported without a warning:
 
     var byteArray: [UInt8] = [0]
     readBytes(&byteArray)
