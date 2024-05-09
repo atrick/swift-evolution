@@ -322,7 +322,7 @@ The object identity workaround above can be packaged in a property wrapper to av
 
 ```swift
 @propertyWrapper
-public class UniqueAddress {
+public class UniqueAddress: NSObject {
   public var wrappedValue: UnsafeRawPointer {
     return UnsafeRawPointer(Unmanaged.passUnretained(self).toOpaque())
   }
