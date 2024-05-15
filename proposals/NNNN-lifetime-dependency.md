@@ -289,7 +289,7 @@ struct S: ~Escapable {
 }
 ```
 
-### Basic Semantics
+### Semantics
 
 A lifetime dependency annotation creates a *lifetime dependency* between a *dependent value* and a *source value*.
 This relationship obeys the following requirements:
@@ -303,6 +303,30 @@ This relationship obeys the following requirements:
   if the access is a mutating access, the source value is further prohibited from being accessed at all during the lifetime of the dependent value.
 
 The compiler must issue a diagnostic if any of the above cannot be satisfied.
+
+#### Propagating inherited dependencies
+
+An assignment that copies or moves a nonescapable value from one variable into another **copies** any lifetime dependence from the source value to the destination value. Thus, variable assignment has the same lifetime copy semantics as passing an argument using a `@dependsOn()` annotation *without* a `scoped` keyword.
+
+```swift
+func copySpan<T>(_ arg: Span<T>) -> /* dependsOn(arg) */ Span<T> { arg }
+
+let span = a.span() // 'span' depends on an access to 'a'
+let result: Span<Int>
+do {
+  let temp = span             // 'temp' inherits the lifetime dependence of 'span'
+  let result = copySpan(temp) // 'result' inherits the lifetime dependence of 'temp'
+}
+parse(result) // ✅ Safe: still within access to 'a'
+```
+
+Note that, although the result of `copySpan` depends on `temp`, the result of the copy may be used outside of the `temp`s lexical scope. This is because `result` depends on the value inside `temp` when `copySpan` is called.   Following the source of each copied dependence, on through the call chain, eventually leads to the dependence root. There are only two kinds of roots: (1) value lifetime (2) variable access.
+
+See examples in test/lifedep/semantics/value_dependence.swift
+
+#### Value lifetime
+
+#### Access dependence
 
 ### Grammar
 
