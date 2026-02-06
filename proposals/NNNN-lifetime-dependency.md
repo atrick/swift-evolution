@@ -8,7 +8,7 @@
 
 ## Introduction
 
-A "lifetime dependency" between two objects indicates that one of them can only be destroyed *after* the other.
+A "lifetime dependency" between two values indicates that one of them can only be mutated or destroyed *after* the other is destroyed.
 This dependency is enforced entirely at compile time; it requires no run-time support.
 We would like to propose an attribute for Swift function types that allow authors to specify lifetime dependencies from one or more of a function's parameters to one of its results.
 
@@ -351,12 +351,12 @@ We've discussed how a non-`Escapable` result must be destroyed before the source
 Structural composition is an important use case for non-`Escapable` types. Getting or setting a non-`Escapable` computed property requires lifetime dependence, just like a function result or an 'inout' parameter:
 
 ```swift
-struct Container<Element>: ~Escapable {
+struct Wrapper<Element: ~Escapable>: ~Escapable {
   var element: Element {
     @lifetime(copy self)
     get { ... }
 
-    @lifetime(self: copy newValue)
+    @lifetime(self: copy self, self: copy newValue)
     set { ... }
   }
 
@@ -364,6 +364,8 @@ struct Container<Element>: ~Escapable {
   init(element: Element) { ... }
 }
 ```
+
+Note that the lifetime annotations above are the natural defaults and therefore never need to be written explicitly.
 
 ### Function type syntax
 
@@ -382,21 +384,16 @@ do {
 }
 ```
 
-We expect most closures that return non-`Escapable` types to be dependent on the closure context rather than a closure
-parameter. By default, a dependency on closure context will not affect the spelling of the function type.
-An explicit syntax is only needed in two situations:
+A `~Escapable` result of a nonescaping function always implicitly depends on a copy of the closure context, regardless of whether the function type also includes an explicit `@lifetime` annotation. For example:
 
-1. A closure whose result depends on both its captures and its arguments. To supprt this, a function will be able to refer to the parameter name from its outer declarations context, which identifies the closure value itself:
+```swift
+func foo(_: (Range<Int>) -> Span<Int>) {...}
 
-`func foo(body: @lifetime(copy body, borrow arg) (arg: Arg) -> Span<T>) {...}`
+let array = [0, 1]
+foo { array.span.extracting($0) }
+```
 
-Note that a dependency on a closure's captures is a `copy` dependency because the closure context is passed by copy. Ultimately, the lifetime of the closure's result is still restricted to the borrow scope of its captured variables.
-
-2. A function type alias that supports dependence on closure captures:
-
-`typealias SpanGetter = @lifetime(self) () -> Span<T>`
-
-Here, we propose repurposing the `self` keyword to refer to the closure context. Use of `self` would obviously be problematic when the function type is a method parameter, but should be reasonably clear when declaring a typealias.
+In the future, the compiler will model precise dependencies on individual closure captures. This is described in the section on "Fine-grained closure capture dependencies".
 
 ### Conditional dependencies
 
@@ -1090,7 +1087,25 @@ Previous revisions of this proposal introduced a `dependsOn` type modifier that 
 
 `func foo(a: A) -> dependsOn(a) R`
 
-Feedback from early adopters convinved use that a separate `@lifetime` attribute improves API clarity and readability. The parenthesized-list syntax does not read well as a type modifier as a function signature scales in complexity.
+Feedback from early adopters convinced us that a separate `@lifetime` attribute improves API clarity and readability. The parenthesized-list syntax does not read well as a type modifier as a function signature scales in complexity.
+
+Developers were also surprised by the new syntax for initializers that forces an explicit `Self` typee:
+
+```swift
+init(arg: <parameter-convention> ArgType) -> dependsOn(arg) Self
+```
+
+And, since mutating methods don't have a `Self`, we would need a new syntax for adding dependencies as part of the method modifier, such as:
+
+```swift
+extension Span {
+  mutating dependsOn(self: other) func reassign(other: Span<T>) {
+    self = other
+  }
+}
+```
+
+The fact that these syntax special cases are so rare actually makes them more problematic because they are more surprising when developers run across them.
 
 ### `@lifetime(unchecked)` annotation
 
@@ -1227,7 +1242,7 @@ This fundamental limitation impacts our ability to fully address many of the fut
 In the current design, aggregating multiple values merges their scopes:
 
 ```swift
-struct Container<Element>: ~Escapable {
+struct Container<Element: ~Escapable>: ~Escapable {
   var a: Element
   var b: Element
 
@@ -1242,7 +1257,7 @@ This has the effect of narrowing the lifetime scope of some components:
 var a = ...
 {
   let b = ...
-  let c = Container<Element>(a: a, b: b)
+  let c = Container(a: a, b: b)
   a = c.a
 }
 use(a) // 🛑 Error: `a` outlives `c`, which is constrained by the lifetime of both `a` and `b`
@@ -1251,7 +1266,7 @@ use(a) // 🛑 Error: `a` outlives `c`, which is constrained by the lifetime of 
 In the future, we want to be able to represent the dependencies of multiple stored properties independently. This might look something like this:
 
 ```swift
-struct Container<Element>: ~Escapable {
+struct Container<Element: ~Escapable>: ~Escapable {
   var a: Element
   var b: Element
 
@@ -1268,7 +1283,7 @@ This would then allow for the parts of `Component` to be extracted preserving th
 var a = ...
 {
   let b = ...
-  let c = Container<Element>(a: a, b: b)
+  let c = Container(a: a, b: b)
   a = c.a
 }
 use(a) // ✅ `a` copies its lifetime from `c.a`, which in turn copied it from the original `a`
@@ -1277,7 +1292,7 @@ use(a) // ✅ `a` copies its lifetime from `c.a`, which in turn copied it from t
 Extraction operations could also declare that they copy the lifetime of one or more components:
 
 ```swift
-extension Container {
+extension Container where Element: ~Escapable {
   @lifetime(copy self.a)
   func getA() -> Element {
     return self.a
@@ -1287,7 +1302,7 @@ extension Container {
 var a = ...
 {
   let b = ...
-  let c = Container<Element>(a: a, b: b)
+  let c = Container(a: a, b: b)
   a = c.getA()
 }
 use(a) // ✅ `getA()` copies its lifetime from `c.a`, which in turn copied it from the original `a`
@@ -1400,7 +1415,7 @@ struct TaskGroup: ~Escapable {
 The current proposal allows for a closure to depend on the borrow of all its captured variables. The closure definition syntax could be expanded to indicate which captures the closure result depends on. This has no effect on the partially applied closure's function type. For example, the closure could specify which captures have borrowed, copied, or mutable lifetimes.
 
 ```swift
-func foo(_: () -> Span<Int>) {...}
+func foo(_: () -> ()) {...}
 
 let unrelated = ...
 let array1 = [0, 1]
@@ -1411,6 +1426,8 @@ foo { @lifetime(span: borrow array2, copy span) in
   span = (...) ? array2.span : span
 }
 ```
+
+Alternatively, we could rely on the compiler to infer fine-grained capture dependencies.
 
 ### Structural lifetime dependencies
 
