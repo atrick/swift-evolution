@@ -267,9 +267,9 @@ Where
 
 And, according to the existing language rules:
 
-* *`parameter-convention`* specifies the ownership of `arg`, **`borrowing`**, **`mutating`**, or **`consuming`**, or the ownership default is applied.
+* *`parameter-convention`* specifies the ownership of `arg`: **`borrowing`**, **`mutating`**, or **`consuming`**, or the ownership default is applied.
 
-The `borrow` or `&` dependency specifiers indicate a scoped dependency on the argument. The specifier must further correspond to the ownership of `arg`:
+The `borrow` or `&` dependency specifiers indicate a scoped dependency on the argument. A scoped dependency must correspond to the argument's ownership:
 
 * A `borrow` dependency specifier requires `borrowing` ownership. It extends borrowing access, prohibiting mutations of the argument, but allowing other simultaneous borrowing accesses.
 * A `&` dependency specifier requires `inout` ownership. It extends mutating access, prohibiting any other access to the argument, whether borrowing or mutating.
@@ -1455,9 +1455,11 @@ func arrayToOwnedSpan<T>(a: consuming [T]) -> OwnedSpan<T> {
 
 ### Lifetime types
 
-This proposal adds language support for expressing dependencies between a function's values. These dependencies are part the function type, but they define a fixed dependency relationship between a function's parameters and results. Lifetime information could instead be used as a type discriminator. In this design, every concrete non-`Escapable` type would have additional generic lifetime parameters. Two non-`Escapable` values of the same structural type (e.g. `Span<Int>`) would then take on different formal types whenever they have different lifetime constraints. In other words, every `~Escapable` variable declaration would have a different formal type. The type system would perform automatic type coercion at function boundaries.
+The current proposal adds language support for expressing lifetime dependencies between a function's values. These dependencies are part the function type, but they define a fixed dependency relationship between a function's parameters and results. Lifetime information could instead be used as a type discriminator. We refer to this alternate approach as "lifetime types". Lifetime types builds on the concept of "nested lifetimes" described above. It could support an alternative syntax, but it would not affect the semantics of lifetime dependencies in most cases. Lifetime types would add a theoretical framework along with a corresponding layer of type checking not present in this proposal.
 
-The purpose of lifetime types is to support generic functions that are polymorphic over lifetime constraints. Consider a transformer function that takes a generic transform closure. In the currently proposed design, it can be written as follows:
+With lifetime types, every concrete non-`Escapable` type would have additional generic lifetime parameters. Two non-`Escapable` values of the same structural type (e.g. `Span<Int>`) would then take on different formal types whenever they have different lifetime constraints. In other words, every `~Escapable` variable declaration could potentially have a different formal type. The type system would perform automatic type coercion at function boundaries.
+
+The advantage of lifetime types is its support for generic functions that are polymorphic over lifetime constraints. Consider a transformer function that takes a generic transform closure. In the currently proposed design, it can be written as follows:
 
 ```swift
 @lifetime(copy arg)
