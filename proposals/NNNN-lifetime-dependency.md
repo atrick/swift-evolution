@@ -51,6 +51,7 @@ This is deeply related to `~Escapable` types, as introduced in [SE-0446](0446-no
 
 #### See Also
 
+* [Documentaion on 'main': @_lifetime annotation](https://github.com/swiftlang/swift/blob/main/docs/ReferenceGuides/LifetimeAnnotation.md)
 * [Forum discussion of Non-Escapable Types and Lifetime Dependency](https://forums.swift.org/t/pitch-non-escapable-types-and-lifetime-dependency)
 * [Pitch Thread for Span](https://forums.swift.org/t/pitch-safe-access-to-contiguous-storage/69888)
 * [Forum discussion of BufferView language requirements](https://forums.swift.org/t/roadmap-language-support-for-bufferview)
@@ -225,7 +226,7 @@ _ = consume a // explicitly end a's lifetime here
 print(ref2[0]) // 🛑 Error: ref2 cannot exceed a's lifetime
 ```
 
-`a` cannot be mutated or destroyed until both `ref1` and `ref2` have expired:
+The variable `a` cannot be mutated or destroyed until both `ref1` and `ref2` have expired:
 
 ```
 a.append(1) // 🛑 Error: 'a' is borrowed by 'ref1' and 'ref2'
@@ -569,9 +570,11 @@ The compiler must issue a diagnostic if any of the above cannot be satisfied.
 
 This proposal adds a `@lifetime` attribute that can be applied to function, initializer, and property accessor declarations and to function types:
 
-> *lifetime-attribute* → **`@`** **`lifetime`** **`(`** *lifetime-dependence-list* **`)`**
+> *lifetime-attribute* → **`@`** **`lifetime`** **`(`** *lifetime-dependence-target-list* **`)`**
 >
-> *lifetime-dependence-list* → (*lifetime-dependence-target-name* **`:`**)? *lifetime-dependence-source* **`,`** *lifetime-dependent-list* **`,`**?
+> *lifetime-dependence-target-list* → (*lifetime-dependence-target-name* **`:`**)? *lifetime-dependence-source-list*
+>
+> *lifetime-dependence-source-list* → *lifetime-dependence-source* (**`,`** *lifetime-dependence-source-list*)?
 >
 > *lifetime-dependence-source* → **`immortal`** | *dependency-kind* *lifetime-dependence-source-name*
 >
@@ -581,7 +584,7 @@ This proposal adds a `@lifetime` attribute that can be applied to function, init
 >
 > *dependency-kind* → **copy** | **borrow** | **&**
 
-The *lifetime-dependence-list* contains a list of parameter names. A parameter name is the "internal" name used to refer to the value in the function body rather than by its argument label. `self` can occur as a parameter name for methods.
+The *lifetime-dependence-target-name* and *lifetime-dependence-source-name* identify parameters by name. A parameter name is the "internal" name used to refer to the value in the function body rather than by its argument label. `self` can occur as a parameter name for methods.
 
 A target parameter must either be an `inout` parameter or `self` in a `mutating` method. If no target parameter is specified, then the target is the declaration's return value.
 
@@ -737,44 +740,42 @@ func reassign(_ span: inout Span<Int>) {
 }
 ```
 
-An `inout` parameter may, however, be reassigned to another function parameter that provides the source of the dependency.
+This means that an `inout` parameter `inoutArg` of potentially non-`Escapable` type can interact with lifetimes in three ways:
 
-```swift
-@lifetime(span: borrow arg)
-func mustReassign(_ span: inout Span<Int>, _ arg: [Int]) {
-  span = arg.span //  ✅ 'span' already depends on 'arg' in the caller's scope.
-}
-```
-
-This means that an `inout` parameter `arg` of potentially non-`Escapable` type can interact with lifetimes in three ways:
-
-- as the source of a scoped dependency, as in `@lifetime([<target>:] &arg)`
-- as the source of a copied dependency, as in `@lifetime([<target>:] copy arg)`
-- as the target of a dependency, as in `@lifetime(arg: <dependency>)`
+- as the source of a scoped dependency, as in `@lifetime([<target>:] &inoutArg)`
+- as the source of a copied dependency, as in `@lifetime([<target>:] copy inoutArg)`
+- as the target of a dependency, as in `@lifetime(inoutArg: <dependency>)`
 
 So it is worth restating the behavior here to emphasize the distinctions.
 A scoped dependency `@lifetime(&arg)` indicates that the target's lifetime is constrained by exclusive access to `arg`.
 A copied dependency `@lifetime(copy arg)` indicates that the target copies its lifetime constraint from value of `arg` when the callee *begins* execution.
-As the target of a dependency, `@lifetime(arg: <dependency>)` indicates the lifetime constraint added to the value of `arg` after the callee *ends* execution.
+As the target of a dependency, `@lifetime(inoutArg: <dependency>)` indicates the lifetime constraint added to the value of `inoutArg` after the callee *ends* execution.
 
 By composition, an `inout` parameter could appear as both the source and target of a dependency:
 
-1. `@lifetime(arg: copy arg)` states that the value of `arg` on return from the callee copies its dependency from the value of `arg` when the function began execution, in effect stating that the lifetime dependency does not change from the caller's perspective. This is the most common case for `inout` parameters and will not require explicit annotation.
+`@lifetime(inoutArg: copy inoutArg)` states that the value of `inoutArg` on return from the callee copies its dependency from the value of `arg` when the function began execution, in effect stating that the lifetime dependency does not change from the caller's perspective. This is the most common case for `inout` parameters and, as described in "Implicit lifetime dependencies", never requires explicit annotation. The `reassign` function above is therefore equivalent to:
 
-2. `@lifetime(arg: &arg)` states that the value of `arg` on return from the callee is dependent on exclusive access to the variable `arg`.  This would have the net effect of making the argument to `arg` inaccessible for the rest of its lifetime, since it is exclusively accessed by the value inside of itself. This is not useful and likely a programmer error. Therefore, we propose to disallow it.
+```
+@lifetime(span: copy span)
+func reassign(_ span: inout Span<Int>) {...}
+```
 
-#### Conditional reassignment creates conjoined dependencies
-
-`inout` argument dependencies sometimes require conditional reassignment:
+An `inout` parameter may, however, also be reassigned to another function parameter that provides the source of the dependency:
 
 ```swift
-@lifetime(span: copy span, copy another)
+@lifetime(span: copy another)
 func mayReassign(span: inout Span<Int>, to another: Span<Int>) {
-  span = (...) ? span : another // ✅
+  span = (...) ? span : another // ✅ `span` depends on its incoming value and `another`
 }
 ```
 
-After the call, the variable passed to the `inout` argument has both its original dependency along with a new dependency on the argument that is the source of the argument dependency:
+Annotions on an `inout` target parameter are additive, so the annotation `@lifetime(span: borrow another)` above is equivalent to `@lifetime(span: copy span, borrow another)`. A copied `inout` dependency can only be suppressed with an explicit immortal dependency: `@lifetime(arg: immortal)`.
+
+Composition also suggests the possibility `@lifetime(inoutArg: &inoutArg)`. This states that the value of `inoutArg` on return from the callee is dependent on exclusive access to the variable `inoutArg`.  This would have the net effect of making the argument to `inoutArg` inaccessible for the rest of its lifetime, since it is exclusively accessed by the value inside of itself. This is not useful and likely a programmer error. Therefore, we propose to disallow it.
+
+#### Conditional reassignment creates conjoined dependencies
+
+In the `mayReassign` example above, the `inout` argument copies its incoming dependency, while also inheriting a dependency from `another`. After the call, the variable passed to the `inout` argument has both its original dependency along with a new dependency on the argument that is the source of the argument dependency:
 
 ```swift
 let a1: [Int] = arg
